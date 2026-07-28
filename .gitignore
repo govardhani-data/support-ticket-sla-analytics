@@ -1,0 +1,28 @@
+# Python virtual environment - regenerate from requirements.txt
+.venv/
+__pycache__/
+*.pyc
+
+# Data files - never commit data to Git
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Power BI temporary files
+*.pbix.tmp
+~$*
+
+# Operating system and editor clutter
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+
+# Secrets - passwords and connection strings never go in Git
+.env
+*.env
+config.local.*
