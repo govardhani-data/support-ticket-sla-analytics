@@ -36,10 +36,16 @@ PRIORITY_MIX = {"P1": 0.02, "P2": 0.13, "P3": 0.45, "P4": 0.40}
 
 # Typical resolution time as a fraction of that priority's SLA target.
 # Below 1.0 means most tickets are comfortably inside SLA.
-WORK_MEDIAN_VS_SLA = {"P1": 0.55, "P2": 0.60, "P3": 0.50, "P4": 0.40}
+#WORK_MEDIAN_VS_SLA = {"P1": 0.55, "P2": 0.60, "P3": 0.50, "P4": 0.40}
+#WORK_MEDIAN_VS_SLA = {"P1": 0.40, "P2": 0.42, "P3": 0.35, "P4": 0.30}
+
+WORK_MEDIAN_VS_SLA = {"P1": 0.27, "P2": 0.28, "P3": 0.24, "P4": 0.21}
+
+
 
 # Spread of resolution times. Higher = longer tail of slow tickets.
-WORK_SPREAD = 0.75
+#WORK_SPREAD = 0.75
+WORK_SPREAD = 0.65
 
 # How many times a ticket changes hands
 REASSIGNMENT_MIX = {0: 0.55, 1: 0.25, 2: 0.11, 3: 0.06, 4: 0.03}
@@ -64,7 +70,31 @@ RESPONSE_SPREAD = 0.8
 REOPEN_ONCE_PROBABILITY = 0.06
 REOPEN_TWICE_PROBABILITY = 0.01
 
-STILL_OPEN_SHARE = 0.03
+#STILL_OPEN_SHARE = 0.03
+# Business hours for teams that are not 24x7
+BUSINESS_START_HOUR = 9
+BUSINESS_END_HOUR = 18
+
+# Work takes this much longer when a ticket lands with a business-hours-only
+# team outside their working window - it waits for cover.
+OUT_OF_HOURS_MULTIPLIER = 2.2
+
+# Relative ticket volume by hour of day (0 to 23). Morning peak, quiet night.
+HOURLY_ARRIVAL_WEIGHTS = [
+    0.3, 0.2, 0.2, 0.2, 0.3, 0.5,      # 00-05  overnight
+    1.0, 2.0, 3.5, 5.0, 4.5, 3.5,      # 06-11  morning ramp, peak at 09:00
+    2.5, 3.0, 3.5, 3.2, 2.8, 2.2,      # 12-17  afternoon
+    1.5, 1.0, 0.8, 0.6, 0.5, 0.4,      # 18-23  evening decline
+]
+
+# Chance a ticket is still open, by how old it is.
+# Recent tickets are often still in progress; old ones rarely are.
+BACKLOG_OPEN_RATES = [
+    (30,  0.45),     # created in the last 30 days
+    (90,  0.15),     # 31 to 90 days ago
+    (180, 0.03),     # 91 to 180 days ago
+]
+BACKLOG_OLD_OPEN_RATE = 0.002   # older than 180 days
 
 # Tickets are raised less on weekends
 WEEKEND_VOLUME_FACTOR = 0.25
@@ -93,6 +123,24 @@ ROOT_CAUSE_MIX = {
     "Unknown / Not Reproducible": 0.03,
 }
 
+CATEGORY_DIFFICULTY = {
+    "Connectivity":          0.95,
+    "VPN":                   0.80,
+    "Firewall":              1.15,
+    "Login / SSO":           0.70,
+    "Performance":           1.30,
+    "Data Error":            1.20,
+    "Integration Failure":   1.55,
+    "Account Provisioning":  0.85,
+    "Permissions":           0.75,
+    "Password Reset":        0.40,
+    "Laptop":                1.05,
+    "Peripheral":            0.65,
+    "Query Performance":     1.40,
+    "Data Correction":       1.25,
+    "Job Failure":           1.40,
+}
+
 
 # ---------------------------------------------------------------------------
 # HELPERS
@@ -115,15 +163,36 @@ def lognormal_minutes(median: float, spread: float) -> int:
     return max(1, int(value))
 
 
+def is_out_of_hours(moment: datetime) -> bool:
+    """True if this moment is outside Monday-Friday business hours."""
+    if moment.isoweekday() >= 6:
+        return True
+    return moment.hour < BUSINESS_START_HOUR or moment.hour >= BUSINESS_END_HOUR
+
+
+def still_open_probability(created: datetime) -> float:
+    """Recent tickets are much more likely to still be open."""
+    age_days = (END - created).days
+    for cutoff, rate in BACKLOG_OPEN_RATES:
+        if age_days <= cutoff:
+            return rate
+    return BACKLOG_OLD_OPEN_RATE
+
+
 def random_created_datetime() -> datetime:
-    """A random moment in the window, with fewer tickets at weekends."""
-    total_minutes = int((END - START).total_seconds() // 60)
+    """A random moment: quiet at weekends, with a morning peak on weekdays."""
+    total_days = (END.date() - START.date()).days
 
     while True:
-        moment = START + timedelta(minutes=int(rng.integers(0, total_minutes)))
-        if moment.isoweekday() >= 6 and random.random() > WEEKEND_VOLUME_FACTOR:
-            continue          # reject most weekend moments and try again
-        return moment
+        day_offset = int(rng.integers(0, total_days + 1))
+        day = START.date() + timedelta(days=day_offset)
+
+        if day.isoweekday() >= 6 and random.random() > WEEKEND_VOLUME_FACTOR:
+            continue
+
+        hour = random.choices(range(24), weights=HOURLY_ARRIVAL_WEIGHTS)[0]
+        minute = int(rng.integers(0, 60))
+        return datetime(day.year, day.month, day.day, hour, minute)
 
 
 # ---------------------------------------------------------------------------
@@ -165,12 +234,23 @@ def build_ticket(ticket_num: int, dims: dict, lookups: dict) -> tuple:
     # --- how many handovers -------------------------------------------
     hops = pick(REASSIGNMENT_MIX)
 
+    
+    # --- which team picks it up first ---------------------------------
+    chain = build_assignment_chain(hops, lookups)
+    first_group = chain[0]["group"]
+
     # --- how long the actual work took --------------------------------
     base_work = lognormal_minutes(
-        median=resolution_target * WORK_MEDIAN_VS_SLA[code],
+        median=resolution_target
+               * WORK_MEDIAN_VS_SLA[code]
+               * CATEGORY_DIFFICULTY[category["subcategory"]],
         spread=WORK_SPREAD,
     )
     work_minutes = int(base_work * REASSIGNMENT_TIME_MULTIPLIER[hops])
+
+    # A business-hours-only team cannot start until the next working day
+    if first_group["shift_model"] != "24x7" and is_out_of_hours(created):
+        work_minutes = int(work_minutes * OUT_OF_HOURS_MULTIPLIER)
 
     # --- waiting on the customer --------------------------------------
     if random.random() < HOLD_PROBABILITY:
@@ -197,11 +277,12 @@ def build_ticket(ticket_num: int, dims: dict, lookups: dict) -> tuple:
         reopen_count = 0
 
     # --- is it still open? ---------------------------------------------
-    still_open = random.random() < STILL_OPEN_SHARE
+   # still_open = random.random() < STILL_OPEN_SHARE
+    still_open = random.random() < still_open_probability(created)
     resolved = None if still_open else created + timedelta(minutes=total_elapsed)
 
     # --- the chain of teams that handled it ----------------------------
-    chain = build_assignment_chain(hops, lookups)
+    #chain = build_assignment_chain(hops, lookups)
     assignments = split_time_across_chain(
         chain, created, work_minutes, hold_minutes, lookups, still_open
     )

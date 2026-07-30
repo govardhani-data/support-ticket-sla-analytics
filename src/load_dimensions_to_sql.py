@@ -44,7 +44,7 @@ def main() -> None:
     for name in TABLES:
         csv_path = DATA_DIR / f"{name}.csv"
         df = pd.read_csv(csv_path)
-        df.to_sql(name, engine, if_exists="replace", index=False)
+        df.to_sql(name, engine, if_exists="append", index=False)
         print(f"  {name:24} {len(df):6,} rows loaded")
 
     print("\nDone.")
