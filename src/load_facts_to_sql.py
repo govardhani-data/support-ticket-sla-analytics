@@ -36,7 +36,7 @@ def main() -> None:
 
     for table, date_cols in DATE_COLUMNS.items():
         df = pd.read_csv(DATA_DIR / f"{table}.csv", parse_dates=date_cols)
-        df.to_sql(table, engine, if_exists="replace", index=False, chunksize=5_000)
+        df.to_sql(table, engine, if_exists="append", index=False, chunksize=5_000)
         print(f"  {table:24} {len(df):7,} rows loaded")
 
     print("\nDone.")
