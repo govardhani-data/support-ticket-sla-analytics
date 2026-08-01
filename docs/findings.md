@@ -3,6 +3,9 @@
 Data as at 2025-12-31. 50,000 tickets, of which 48,733 resolved and 1,267 still
 open. Overall SLA breach rate: **13.31%** (6,487 breaches).
 
+All figures are produced by `sql/03_analysis/02_five_questions.sql`. Data quality
+checks are in `sql/03_analysis/01_data_quality_checks.sql`.
+
 ---
 
 ## Headline findings
@@ -18,6 +21,12 @@ open. Overall SLA breach rate: **13.31%** (6,487 breaches).
 
 3. **Problem type matters 18-fold.** Integration failures breach at 24.92%,
    password resets at 1.39%, on near-identical ticket volumes.
+
+**These drivers overlap and cannot be added together.** A ticket that arrives out
+of hours may also be reassigned several times and may also be a difficult problem
+type, so it appears in more than one figure above. The 40% and 52% describe
+overlapping populations, not separate ones. Isolating each driver's independent
+contribution would require a regression rather than the cross-tabs used here.
 
 ---
 
@@ -44,7 +53,7 @@ volume. Improving P2 fixes the worst percentage; improving P3 reduces the larges
 number of broken promises.
 
 **Recommendation.** Review whether the eight-hour P2 target is achievable. A
-target missed one time in five stops functioning as a commitment.
+target missed almost one time in five stops functioning as a commitment.
 
 ---
 
@@ -68,7 +77,9 @@ restarts investigation. Expect a threshold, not a smooth increase.
 the rate of first-touch tickets.
 
 **Where the threshold sits.** In percentage points the increases are +6.2, +12.0,
-+17.9, +17.5. Risk doubles at the second handover and again by the third.
++17.9, +17.5. Risk roughly doubles at each of the first two handovers, then adds about 18
+percentage points at each of the next two. The compounding is steepest early; the
+absolute damage is worst late.
 
 **A caution against over-reacting.** The breach counts are strikingly even across
 groups: 1,599 / 1,493 / 1,284 / 1,243 / 868. First-touch tickets have the lowest
@@ -209,10 +220,9 @@ hardest tickets sit open indefinitely, because those never enter the average at
 all. Backlog age is what exposes that.
 
 **The concerning finding is not the volume, it is the tail.** 84 tickets have been
-open more than six months, and 4 of them are P1 - tickets originally classified
-as critical incidents. A P1 open for two years is not a critical incident any
-more; it is a record nobody closed. That is a data hygiene problem as much as a
-delivery one.
+open more than six months. Separately, 4 P1 tickets - originally classified as
+critical incidents - have been open more than 90 days, and the oldest open P1 has
+been sitting for 738 days.
 
 **Recommendation.** Introduce a backlog review at 90 days: close, re-prioritise or
 escalate. Any P1 open beyond 30 days should be reviewed automatically, because
@@ -239,10 +249,15 @@ before claiming that handovers cause breaches.
 Eid and other moving festivals are not, so working-day calculations around those
 dates would be wrong.
 
-**A small number of very old open tickets persist.** Four P1s open beyond two
-years are an artefact of the backlog model, which allows a low constant
-probability of a ticket remaining open indefinitely. Real ITSM systems usually
-auto-close these.
+**A small number of very old open tickets persist.** The oldest open ticket is
+1,069 days and the oldest open P1 is 738 days. This is an artefact of the backlog
+model, which allows a low constant probability of a ticket remaining open
+indefinitely. Real ITSM systems usually auto-close these.
+
+**First-response SLA was not analysed.** The dataset models a separate
+first-response target per priority, but this analysis covers resolution SLA only.
+"Are we acknowledging quickly but resolving slowly?" is a question the data could
+answer and this version does not.
 
 ---
 
