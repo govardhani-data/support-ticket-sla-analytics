@@ -188,7 +188,7 @@ Then:
 7. Run `sql/01_schema/02_create_views.sql`
 8. Run `sql/03_analysis/01_data_quality_checks.sql` — every check should pass
 9. Run `sql/03_analysis/02_five_questions.sql` to reproduce every figure above
-10. Open `powerbi/support-ticket-sla-dashboard.pbix`
+10. Open `powerbi/support-ticket-sla-dashboard-v1.pbix`
 
 ---
 
